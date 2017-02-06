@@ -1,4 +1,5 @@
 package com.wecc
+import scala.concurrent.ExecutionContext.Implicits.global
 import org.mongodb.scala._
 import com.github.nscala_time.time.Imports._
 object Hello {
@@ -11,28 +12,44 @@ object Hello {
     import org.mongodb.scala.bson._
     import org.mongodb.scala.model.UpdateOptions
 
-    try {
-      val (excelFilePath, pkg, wb) = ExcelUtility.openExcel("test.xlsx")
-
-      val sheet = wb.getSheetAt(0)
-      var rowN = 1
-      while (true) {
-        val row = sheet.getRow(rowN)
-        val timeStr = row.getCell(0).getStringCellValue
-        val date = DateTime.parse(timeStr, DateTimeFormat.forPattern("YYYY/MM/dd hh:mm:ss"))
-        val so2 = row.getCell(1).getNumericCellValue
-        System.console().printf(date.toString() + " " + so2 + "\n")
-        val bdt: BsonDateTime = new BsonDateTime(date.getMillis)
-
-        val f = collection.updateOne(equal("_id", bdt), Updates.set("so2.v", so2)).toFuture()
-        rowN += 1
-      }
-    } catch {
-      case ex: Throwable =>
-        System.console().printf(ex.toString())
-    } finally {
-
-      //mongoClient.close()
+    if (args.length != 3) {
+      Console.println("start end shift")
+      return
     }
+
+    val start = DateTime.parse(args(0), DateTimeFormat.forPattern("YYYY/MM/dd hh:mm:ss"))
+    val startB: BsonDateTime = new BsonDateTime(start.getMillis)
+    val end = DateTime.parse(args(1), DateTimeFormat.forPattern("YYYY/MM/dd hh:mm:ss"))
+    val endB: BsonDateTime = new BsonDateTime(end.getMillis)
+    val shift = args(2).toInt
+
+    val f = collection.find(and(gte("_id", startB), lt("_id", endB))).toFuture()
+    val retListF =
+      for (docs <- f) yield {
+        docs map {
+          doc =>
+            (doc("_id").asDateTime().getValue, doc("SO2").asDocument().get("v").asDouble().getValue)
+        }
+      }
+    import scala.concurrent._
+    import scala.util._
+    
+    val updateF =
+      for(retList <- retListF) yield{
+        retList map {
+          ret =>
+            val time = ret._1 + shift* 1000
+            val so2 = ret._2
+            
+            collection.updateOne(equal("_id", new BsonDateTime(time)), Updates.set("SO2.v", so2)).toFuture()
+        }
+      }
+    
+    import scala.concurrent._
+    val ff = updateF.flatMap { x => Future.sequence(x) }
+    
+    val ret = Await.ready(ff, scala.concurrent.duration.Duration.Inf).value.get
+    Console.println("Finished...")
+    mongoClient.close()
   }
 }
