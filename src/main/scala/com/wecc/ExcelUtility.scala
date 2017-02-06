@@ -1,4 +1,4 @@
-package controllers
+package com.wecc
 import org.apache.poi.openxml4j.opc._
 import org.apache.poi.xssf.usermodel._
 import com.github.nscala_time.time.Imports._
@@ -8,7 +8,7 @@ import java.nio.file._
 import org.apache.poi.ss.usermodel._
 
 object ExcelUtility {
-  private def openExcel(reportFilePath: String) = {
+  def openExcel(reportFilePath: String) = {
     //Open Excel
     val pkg = OPCPackage.open(new FileInputStream(reportFilePath))
     val wb = new XSSFWorkbook(pkg);
